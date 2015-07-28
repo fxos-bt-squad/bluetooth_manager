@@ -1,0 +1,27 @@
+{
+  "name": "bluetooth_manager",
+  "version": "1.0.0",
+  "description": "A proxy for WebBluetooth v2 API",
+  "main": "index.js",
+  "scripts": {
+    "test": "gulp test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dwi2/bluetooth_manager.git"
+  },
+  "license": "MPL-2.0",
+  "bugs": {
+    "url": "https://github.com/dwi2/bluetooth_manager/issues"
+  },
+  "homepage": "https://github.com/dwi2/bluetooth_manager#readme",
+  "devDependencies": {
+    "gulp": "^3.9.0",
+    "gulp-bower": "0.0.10",
+    "gulp-concat": "^2.6.0",
+    "gulp-jscs": "^1.6.0",
+    "gulp-jshint": "^1.11.2",
+    "gulp-notify": "^2.2.0",
+    "jshint-stylish": "^2.0.1"
+  }
+}
