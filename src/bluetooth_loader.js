@@ -9,7 +9,6 @@
         _discoveryHandle: {
           addEventListener: function() {}
         },
-
         state: 'disabled',
         enable: function() {
           return Promise.resolve();

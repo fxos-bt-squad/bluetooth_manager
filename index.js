@@ -185,7 +185,6 @@
         _discoveryHandle: {
           addEventListener: function() {}
         },
-
         state: 'disabled',
         enable: function() {
           return Promise.resolve();
@@ -213,7 +212,45 @@
 
 }(window));
 
-/* globals evt, BluetoothLoader */
+/* globals evt */
+'use strict';
+
+(function(exports) {
+  var FakeGattServer = {
+    services: [],
+    connect: function(address) {},
+    disconnect: function(address) {},
+    addService: function(service) {},
+    removeService: function(service) {},
+    notifyCharacteristicChanged:
+      function(address, uuid, instanceId, confirm) {},
+    sendResponse: function(address, status, requestId, value) {}
+  };
+
+  var GattServerManager = function() {};
+
+  GattServerManager.prototype = evt({
+    _bluetoothManager: undefined,
+    _gattServer: undefined,
+
+    init: function(bluetoothManager) {
+      this._bluetoothManager = bluetoothManager;
+      this._bluetoothManager.on('default-adapter-ready',
+        this.onDefaultAdapterReady.bind(this));
+    },
+
+    onDefaultAdapterReady: function(adapter) {
+      // we'll fake BluetoothGattServer until API is ready
+      this._gattServer = adapter.gattServer || FakeGattServer;
+      console.log(this._gattServer);
+    }
+
+  });
+
+  exports.GattServerManager = GattServerManager;
+}(window));
+
+/* globals evt, BluetoothLoader, GattServerManager */
 (function(exports) {
   'use strict';
 
@@ -226,37 +263,56 @@
 
     _discoveryHandle: undefined,
 
-    _handleDeviceFound: undefined,
-
-    _handleBeforeUnload: undefined,
-
     _deviceDeck: undefined,
+
+    _gattServerManager: undefined,
 
     init: function bm_init() {
       this._mozBluetooth = BluetoothLoader.getMozBluetooth();
+      this._gattServerManager = new GattServerManager();
+      this._gattServerManager.init(this);
+      this._mozBluetooth.addEventListener('attributechanged', this);
+      this.setDefaultAdapter(this._mozBluetooth.defaultAdapter);
+    },
 
-      this._handleDeviceFound = this.onDeviceFound.bind(this);
+    setDefaultAdapter: function bm_setDefaultAdapter(adapter) {
+      if (!adapter) {
+        return;
+      }
 
-      this._mozBluetooth.addEventListener('attributechanged',
-        this.onAttributeChanged.bind(this));
-
-      this._defaultAdapter = this._mozBluetooth.defaultAdapter;
+      if (this._defaultAdapter) {
+        // reset default adapter, remove event handler on it
+        this._defaultAdapter.removeEventListener('attributechanged', this);
+      }
+      this._defaultAdapter = adapter;
+      this._defaultAdapter.addEventListener('attributechanged', this);
+      this.fire('default-adapter-ready', {adapter: this._defaultAdapter});
     },
 
     onAttributeChanged: function bm_onAttributeChanged(evt) {
       var that = this;
       [].forEach.call(evt.attrs, function(attr, index) {
+        console.log(attr + ' changed');
         if (attr === 'defaultAdapter') {
-          that._defaultAdapter = that._mozBluetooth.defaultAdapter;
-          that.fire('default-adapter-ready');
+          that.setDefaultAdapter(that._mozBluetooth.defaultAdapter);
         }
       });
     },
 
+    handleEvent: function bm_handleEvent(evt) {
+      switch(evt.type) {
+        case 'attributechanged':
+          this.onAttributeChanged(evt);
+          break;
+        case 'devicefound':
+          this.onDeviceFound(evt);
+          break;
+      }
+    },
+
     _keepDiscoveryHandle: function bm_keepDiscoveryHandle(handle) {
       this._discoveryHandle = handle;
-      this._discoveryHandle.addEventListener('devicefound',
-        this._handleDeviceFound);
+      this._discoveryHandle.addEventListener('devicefound', this);
     },
 
     _startDiscovery: function bm_startDiscovery() {
