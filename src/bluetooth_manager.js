@@ -11,11 +11,11 @@
 
     _discoveryHandle: undefined,
 
-    _deviceDeck: undefined,
-
     _gattServerManager: undefined,
 
     _discovering: false,
+
+    _pairPermission: false,
 
     get discovering () {
       return this._discovering;
@@ -53,8 +53,9 @@
       }
     },
 
-    init: function bm_init() {
+    init: function bm_init(pairPermission) {
       this._mozBluetooth = BluetoothLoader.getMozBluetooth();
+      this._pairPermission = pairPermission;
       this._gattServerManager = new GattServerManager();
       this._gattServerManager.init(this);
       this._mozBluetooth.addEventListener('attributechanged', this);
@@ -69,9 +70,37 @@
       if (this._defaultAdapter) {
         // reset default adapter, remove event handler on it
         this._defaultAdapter.removeEventListener('attributechanged', this);
+        this._defaultAdapter.removeEventListener('devicepaired', this);
+        this._defaultAdapter.removeEventListener('deviceunpaired', this);
+        this._defaultAdapter.removeEventListener('pairingaborted', this);
+        if (this._pairPermission && this._defaultAdapter.pairingReqs) {
+          this._defaultAdapter.pairingReqs.removeEventListener(
+            'displaypasskeyreq', this);
+          this._defaultAdapter.pairingReqs.removeEventListener(
+            'enterpincodereq', this);
+          this._defaultAdapter.pairingReqs.removeEventListener(
+            'pairingconfirmationreq', this);
+          this._defaultAdapter.pairingReqs.removeEventListener(
+            'pairingconsentreq', this);
+        }
       }
+
       this._defaultAdapter = adapter;
       this._defaultAdapter.addEventListener('attributechanged', this);
+      this._defaultAdapter.addEventListener('devicepaired', this);
+      this._defaultAdapter.addEventListener('deviceunpaired', this);
+      this._defaultAdapter.addEventListener('pairingaborted', this);
+      if (this._defaultAdapter &&
+          this._pairPermission && this._defaultAdapter.pairingReqs) {
+        this._defaultAdapter.pairingReqs.addEventListener(
+          'displaypasskeyreq', this);
+        this._defaultAdapter.pairingReqs.addEventListener(
+          'enterpincodereq', this);
+        this._defaultAdapter.pairingReqs.addEventListener(
+          'pairingconfirmationreq', this);
+        this._defaultAdapter.pairingReqs.addEventListener(
+          'pairingconsentreq', this);
+      }
       this.fire('default-adapter-ready', {adapter: this._defaultAdapter});
     },
 
@@ -81,7 +110,15 @@
         console.log('attribute: ' + attr + ' changed');
         switch(attr) {
           case 'defaultAdapter':
-            that.setDefaultAdapter(that._mozBluetooth.defaultAdapter);
+            if (that.discovering) {
+              that.safelyStopDiscovery().then(function() {
+                that.setDefaultAdapter(that._mozBluetooth.defaultAdapter);
+              });
+            } else {
+              // TODO: we should also make sure we stop le scan before
+              // touching default adapter
+              that.setDefaultAdapter(that._mozBluetooth.defaultAdapter);
+            }
             break;
           case 'discovering':
             that.discovering = that._defaultAdapter.discovering;
@@ -99,7 +136,37 @@
           this.onAttributeChanged(evt);
           break;
         case 'devicefound':
-          this.onDeviceFound(evt);
+          this.fire('device-found', evt.device);
+          break;
+        case 'devicepaired':
+          this.fire('device-paired', {
+            device: evt.device,
+            address: evt.address
+          });
+          break;
+        case 'deviceunpaired':
+          this.fire('device-unpaired', {
+            device: evt.device,
+            address: evt.address
+          });
+          break;
+        case 'pairingaborted':
+          // TODO
+          break;
+        case 'displaypasskeyreq':
+          this.fire('display-passkey-req', {
+            device: evt.device,
+            passkey: evt.handle.passkey
+          });
+          break;
+        case 'enterpincodereq':
+          // TODO
+          break;
+        case 'pairingconfirmationreq':
+          // TODO
+          break;
+        case 'pairingconsentreq':
+          // TODO
           break;
       }
     },
@@ -210,6 +277,18 @@
       return this._defaultAdapter.stopLeScan(this._discoveryHandle);
     },
 
+    _pair: function bm_pair(address) {
+      return this._defaultAdapter.pair(address);
+    },
+
+    _unpair: function bm_unpair(address) {
+      return this._defaultAdapter.unpair(address);
+    },
+
+    _setDiscoverable: function bm_setDiscoverable(value) {
+      return this._defaultAdapter.setDiscoverable(value);
+    },
+
     safelyStartLeScan: function bm_safelyStartLeScan(uuids) {
       uuids = uuids || [];
       if (!this._defaultAdapter) {
@@ -229,9 +308,28 @@
       });
     },
 
-    onDeviceFound: function bm_onDeviceFound(evt) {
-      var device = evt.device;
-      this.fire('device-found', device);
+    safelyPair: function bm_safelyPair(address) {
+      if (!this._defaultAdapter) {
+        return this._waitForAdapterReadyThen(this._pair, this, [address]);
+      }
+      return this._pair(address);
+    },
+
+    safelyUnpair: function bm_safelyUnpair(address) {
+      if (!this._defaultAdapter) {
+        return this._waitForAdapterReadyThen(this._unpair, this, [address]);
+      }
+      return this._unpair(address).catch(function(reason) {
+        console.warn('failed to unpair: ' + reason);
+      });
+    },
+
+    safelySetDiscoverable: function bm_safelySetDiscoverable(value) {
+      if (!this._defaultAdapter) {
+        return this._waitForAdapterReadyThen(
+          this._setDiscoverable, this, [value]);
+      }
+      return this._setDiscoverable(value);
     },
 
     // TODO: should have a better name

@@ -13,7 +13,8 @@
     "src"
   ],
   "dependencies": {
-    "evt": "gaia-components/evt#~0.4.0"
+    "evt": "gaia-components/evt#~0.4.0",
+    "node-uuid": "broofa/node-uuid"
   },
   "private": true
 }

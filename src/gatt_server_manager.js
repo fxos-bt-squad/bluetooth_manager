@@ -1,55 +1,33 @@
-/* globals evt */
+/* globals evt, FakeGattServer, uuid, FakeGattService, BluetoothGattService */
 'use strict';
 
 (function(exports) {
-  var FakeGattServer = {
-    isFake: true,
-    services: [],
-    connect: function(address) {
-      console.log('invoke FakeGattServer.connect');
-      return Promise.resolve();
-    },
-    disconnect: function(address) {
-      console.log('invoke FakeGattServer.disconnect');
-      return Promise.resolve();
-    },
-    addService: function(service) {
-      console.log('invoke FakeGattServer.addService');
-      return Promise.resolve();
-    },
-    removeService: function(service) {
-      console.log('invoke FakeGattServer.removeService');
-      return Promise.resolve();
-    },
-    notifyCharacteristicChanged:
-      function(address, uuid, instanceId, confirm) {
-        console.log('invoke FakeGattServer.notifyCharacteristicChanged');
-        return Promise.resolve();
-      },
-    sendResponse: function(address, status, requestId, value) {
-      console.log('invoke FakeGattServer.sendResponse');
-      return Promise.resolve();
-    },
-    addEventListener: function() {
-      console.log('invoke FakeGattServer.addEventListener');
-    },
-    removeEventListener: function() {
-      console.log('invoke FakeGattServer.removeEventListener');
+  var GattService;
+  // XXX: detect if we are able to use BluetoothGattService
+  // and use FakeGattService if it is not ready
+  (function() {
+    try {
+      new BluetoothGattService(false, uuid.v4());
+      GattService = BluetoothGattService;
+    } catch (e) {
+      GattService = FakeGattService;
     }
-  };
+  }());
 
   var GattServerManager = function() {};
-
   GattServerManager.prototype = evt({
     _bluetoothManager: undefined,
     _gattServer: undefined,
 
     init: function(bluetoothManager) {
       this._bluetoothManager = bluetoothManager;
+
+      this.handleDefaultAdapterReady = this.onDefaultAdapterReady.bind(this);
       this._bluetoothManager.on('default-adapter-ready',
-        this.onDefaultAdapterReady.bind(this));
+        this.handleDefaultAdapterReady);
     },
 
+    handleDefaultAdapterReady: undefined,
     onDefaultAdapterReady: function(detail) {
       var adapter = detail.adapter;
       // we'll fake BluetoothGattServer until API is ready
@@ -57,6 +35,20 @@
       this._gattServer.addEventListener('deviceconnectionstatechanged', this);
       this._gattServer.addEventListener('attributereadreq', this);
       this._gattServer.addEventListener('attributewritereq', this);
+    },
+
+    uninit: function() {
+      if (this._gattServer) {
+        this._gattServer.removeEventListener(
+          'deviceconnectionstatechanged', this);
+        this._gattServer.removeEventListener('attributereadreq', this);
+        this._gattServer.removeEventListener('attributewritereq', this);
+        this._gattServer = undefined;
+      }
+      if (this._bluetoothManager) {
+        this._bluetoothManager.off('default-adapter-ready',
+        this.handleDefaultAdapterReady);
+      }
     },
 
     connect: function(address) {
@@ -84,6 +76,10 @@
           });
           break;
       }
+    },
+
+    createEmptyGattService: function(isPrimary) {
+      return new GattService(isPrimary, uuid.v4());
     }
 
   });

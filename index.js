@@ -199,7 +199,13 @@
           return Promise.resolve();
         },
         addEventListener: function() {},
-        removeEventListener: function() {}
+        removeEventListener: function() {},
+        pair: function() {
+          return Promise.resolve();
+        },
+        unpair: function() {
+          return Promise.resolve();
+        }
       }
     },
 
@@ -214,7 +220,6 @@
 
 }(window));
 
-/* globals evt */
 'use strict';
 
 (function(exports) {
@@ -253,19 +258,135 @@
       console.log('invoke FakeGattServer.removeEventListener');
     }
   };
+  exports.FakeGattServer = FakeGattServer;
+
+  var FakeGattService = function(isPrimary, uuid) {
+    this.characteristics = [];
+    this.includedServices = [];
+    this.isPrimary = isPrimary || false;
+    this.uuid = uuid || '';
+    this.instanceId = 0;
+  };
+  FakeGattService.prototype = {
+    addCharateristic: function(uuid, permissions, properties, value) {
+      var that = this;
+      return new Promise(function(resolve, reject) {
+        var characteristic = new FakeGattCharacteristic();
+
+        characteristic._service = that;
+        characteristic._descriptors = [];
+        characteristic._uuid = uuid;
+        characteristic._instanceId = 0;
+        characteristic._value = value;
+        characteristic._permissions = permissions;
+        characteristic._properties = properties;
+        characteristic.writeType = {
+          noResponse: false,
+          'default': false,
+          signed: false
+        };
+
+        that.characteristics.push(characteristic);
+        resolve(characteristic);
+      });
+    },
+    addIncludedService: function(service) {
+      return Promise.resolve();
+    }
+  };
+  exports.FakeGattService = FakeGattService;
+
+  // do not call this ctor from external module
+  var FakeGattCharacteristic = function() {};
+  FakeGattCharacteristic.prototype = {
+    get service () {
+      return this._service;
+    },
+    get descriptors () {
+      return this._descriptors;
+    },
+    get uuid () {
+      return this._uuid;
+    },
+    get instanceId () {
+      return this._instanceId;
+    },
+    get value () {
+      return this._value;
+    },
+    get permissions () {
+      return this._permissions;
+    },
+    get properties () {
+      return this._properties;
+    },
+    // TODO: writeType
+    readValue: function() {
+      return Promise.resolve();
+    },
+    writeValue: function(value) {
+      return Promise.resolve();
+    },
+    startNotifications: function() {
+      return Promise.resolve();
+    },
+    stopNotifications: function() {
+      return Promise.resolve();
+    },
+    addDescriptor: function(uuid, permissions, value) {
+      return Promise.resolve();
+    }
+  };
+  exports.FakeGattCharacteristic = FakeGattCharacteristic;
+
+  var FakeGattDescriptor = function(uuid, permissions, value, characteristic) {
+    this.characteristic = characteristic;
+    this.uuid = uuid;
+    this.permissions = permissions;
+    this.value = value;
+  };
+  FakeGattDescriptor.prototype = {
+    readValue: function() {
+      return Promise.resolve(this.value);
+    },
+    writeValue: function(value) {
+      this.value = value;
+      return Promise.resolve();
+    }
+  };
+  exports.FakeGattDescriptor = FakeGattDescriptor;
+
+}(window));
+/* globals evt, FakeGattServer, uuid, FakeGattService, BluetoothGattService */
+'use strict';
+
+(function(exports) {
+  var GattService;
+  // XXX: detect if we are able to use BluetoothGattService
+  // and use FakeGattService if it is not ready
+  (function() {
+    try {
+      new BluetoothGattService(false, uuid.v4());
+      GattService = BluetoothGattService;
+    } catch (e) {
+      GattService = FakeGattService;
+    }
+  }());
 
   var GattServerManager = function() {};
-
   GattServerManager.prototype = evt({
     _bluetoothManager: undefined,
     _gattServer: undefined,
 
     init: function(bluetoothManager) {
       this._bluetoothManager = bluetoothManager;
+
+      this.handleDefaultAdapterReady = this.onDefaultAdapterReady.bind(this);
       this._bluetoothManager.on('default-adapter-ready',
-        this.onDefaultAdapterReady.bind(this));
+        this.handleDefaultAdapterReady);
     },
 
+    handleDefaultAdapterReady: undefined,
     onDefaultAdapterReady: function(detail) {
       var adapter = detail.adapter;
       // we'll fake BluetoothGattServer until API is ready
@@ -273,6 +394,20 @@
       this._gattServer.addEventListener('deviceconnectionstatechanged', this);
       this._gattServer.addEventListener('attributereadreq', this);
       this._gattServer.addEventListener('attributewritereq', this);
+    },
+
+    uninit: function() {
+      if (this._gattServer) {
+        this._gattServer.removeEventListener(
+          'deviceconnectionstatechanged', this);
+        this._gattServer.removeEventListener('attributereadreq', this);
+        this._gattServer.removeEventListener('attributewritereq', this);
+        this._gattServer = undefined;
+      }
+      if (this._bluetoothManager) {
+        this._bluetoothManager.off('default-adapter-ready',
+        this.handleDefaultAdapterReady);
+      }
     },
 
     connect: function(address) {
@@ -300,6 +435,10 @@
           });
           break;
       }
+    },
+
+    createEmptyGattService: function(isPrimary) {
+      return new GattService(isPrimary, uuid.v4());
     }
 
   });
@@ -320,11 +459,11 @@
 
     _discoveryHandle: undefined,
 
-    _deviceDeck: undefined,
-
     _gattServerManager: undefined,
 
     _discovering: false,
+
+    _pairPermission: false,
 
     get discovering () {
       return this._discovering;
@@ -362,8 +501,9 @@
       }
     },
 
-    init: function bm_init() {
+    init: function bm_init(pairPermission) {
       this._mozBluetooth = BluetoothLoader.getMozBluetooth();
+      this._pairPermission = pairPermission;
       this._gattServerManager = new GattServerManager();
       this._gattServerManager.init(this);
       this._mozBluetooth.addEventListener('attributechanged', this);
@@ -378,9 +518,37 @@
       if (this._defaultAdapter) {
         // reset default adapter, remove event handler on it
         this._defaultAdapter.removeEventListener('attributechanged', this);
+        this._defaultAdapter.removeEventListener('devicepaired', this);
+        this._defaultAdapter.removeEventListener('deviceunpaired', this);
+        this._defaultAdapter.removeEventListener('pairingaborted', this);
+        if (this._pairPermission && this._defaultAdapter.pairingReqs) {
+          this._defaultAdapter.pairingReqs.removeEventListener(
+            'displaypasskeyreq', this);
+          this._defaultAdapter.pairingReqs.removeEventListener(
+            'enterpincodereq', this);
+          this._defaultAdapter.pairingReqs.removeEventListener(
+            'pairingconfirmationreq', this);
+          this._defaultAdapter.pairingReqs.removeEventListener(
+            'pairingconsentreq', this);
+        }
       }
+
       this._defaultAdapter = adapter;
       this._defaultAdapter.addEventListener('attributechanged', this);
+      this._defaultAdapter.addEventListener('devicepaired', this);
+      this._defaultAdapter.addEventListener('deviceunpaired', this);
+      this._defaultAdapter.addEventListener('pairingaborted', this);
+      if (this._defaultAdapter &&
+          this._pairPermission && this._defaultAdapter.pairingReqs) {
+        this._defaultAdapter.pairingReqs.addEventListener(
+          'displaypasskeyreq', this);
+        this._defaultAdapter.pairingReqs.addEventListener(
+          'enterpincodereq', this);
+        this._defaultAdapter.pairingReqs.addEventListener(
+          'pairingconfirmationreq', this);
+        this._defaultAdapter.pairingReqs.addEventListener(
+          'pairingconsentreq', this);
+      }
       this.fire('default-adapter-ready', {adapter: this._defaultAdapter});
     },
 
@@ -390,7 +558,15 @@
         console.log('attribute: ' + attr + ' changed');
         switch(attr) {
           case 'defaultAdapter':
-            that.setDefaultAdapter(that._mozBluetooth.defaultAdapter);
+            if (that.discovering) {
+              that.safelyStopDiscovery().then(function() {
+                that.setDefaultAdapter(that._mozBluetooth.defaultAdapter);
+              });
+            } else {
+              // TODO: we should also make sure we stop le scan before
+              // touching default adapter
+              that.setDefaultAdapter(that._mozBluetooth.defaultAdapter);
+            }
             break;
           case 'discovering':
             that.discovering = that._defaultAdapter.discovering;
@@ -408,7 +584,37 @@
           this.onAttributeChanged(evt);
           break;
         case 'devicefound':
-          this.onDeviceFound(evt);
+          this.fire('device-found', evt.device);
+          break;
+        case 'devicepaired':
+          this.fire('device-paired', {
+            device: evt.device,
+            address: evt.address
+          });
+          break;
+        case 'deviceunpaired':
+          this.fire('device-unpaired', {
+            device: evt.device,
+            address: evt.address
+          });
+          break;
+        case 'pairingaborted':
+          // TODO
+          break;
+        case 'displaypasskeyreq':
+          this.fire('display-passkey-req', {
+            device: evt.device,
+            passkey: evt.handle.passkey
+          });
+          break;
+        case 'enterpincodereq':
+          // TODO
+          break;
+        case 'pairingconfirmationreq':
+          // TODO
+          break;
+        case 'pairingconsentreq':
+          // TODO
           break;
       }
     },
@@ -519,6 +725,18 @@
       return this._defaultAdapter.stopLeScan(this._discoveryHandle);
     },
 
+    _pair: function bm_pair(address) {
+      return this._defaultAdapter.pair(address);
+    },
+
+    _unpair: function bm_unpair(address) {
+      return this._defaultAdapter.unpair(address);
+    },
+
+    _setDiscoverable: function bm_setDiscoverable(value) {
+      return this._defaultAdapter.setDiscoverable(value);
+    },
+
     safelyStartLeScan: function bm_safelyStartLeScan(uuids) {
       uuids = uuids || [];
       if (!this._defaultAdapter) {
@@ -538,9 +756,28 @@
       });
     },
 
-    onDeviceFound: function bm_onDeviceFound(evt) {
-      var device = evt.device;
-      this.fire('device-found', device);
+    safelyPair: function bm_safelyPair(address) {
+      if (!this._defaultAdapter) {
+        return this._waitForAdapterReadyThen(this._pair, this, [address]);
+      }
+      return this._pair(address);
+    },
+
+    safelyUnpair: function bm_safelyUnpair(address) {
+      if (!this._defaultAdapter) {
+        return this._waitForAdapterReadyThen(this._unpair, this, [address]);
+      }
+      return this._unpair(address).catch(function(reason) {
+        console.warn('failed to unpair: ' + reason);
+      });
+    },
+
+    safelySetDiscoverable: function bm_safelySetDiscoverable(value) {
+      if (!this._defaultAdapter) {
+        return this._waitForAdapterReadyThen(
+          this._setDiscoverable, this, [value]);
+      }
+      return this._setDiscoverable(value);
     },
 
     // TODO: should have a better name

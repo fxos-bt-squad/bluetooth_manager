@@ -23,7 +23,13 @@
           return Promise.resolve();
         },
         addEventListener: function() {},
-        removeEventListener: function() {}
+        removeEventListener: function() {},
+        pair: function() {
+          return Promise.resolve();
+        },
+        unpair: function() {
+          return Promise.resolve();
+        }
       }
     },
 
