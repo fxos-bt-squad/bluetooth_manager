@@ -21,7 +21,9 @@
         },
         stopDiscovery: function() {
           return Promise.resolve();
-        }
+        },
+        addEventListener: function() {},
+        removeEventListener: function() {}
       }
     },
 
