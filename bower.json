@@ -1,6 +1,6 @@
 {
   "name": "bluetooth_manager",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "homepage": "https://github.com/dwi2/bluetooth_manager",
   "description": "A proxy for WebBluetooth v2 API",
   "license": "MPL-2.0",
