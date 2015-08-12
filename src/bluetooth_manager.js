@@ -23,6 +23,7 @@
 
     set discovering (value) {
       if (value !== this._discovering) {
+        console.log(this._discovering + ' -> ' + value);
         this._discovering = value;
         this.fire('discovering-state-changed', value);
         if (value) {
@@ -40,6 +41,7 @@
 
     set state (value) {
       if (value !== this._state) {
+        console.log(this._state + ' -> ' + value);
         this._state = value;
 
         this.fire('state-changed', value);
@@ -169,7 +171,7 @@
         return this._waitForAdapterReadyThen(
           this._disable, this);
       }
-      return this.disable().catch(function(reason) {
+      return this._disable().catch(function(reason) {
         console.warn('failed to disable: ' + reason);
       });
     },
