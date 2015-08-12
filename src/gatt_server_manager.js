@@ -70,7 +70,7 @@
       if (!this._gattServer) {
         return Promise.reject('gatt server does not exist');
       }
-      return this._gattServer.disonnect(address);
+      return this._gattServer.disconnect(address);
     },
 
     handleEvent: function(evt) {
