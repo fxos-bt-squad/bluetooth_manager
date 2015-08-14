@@ -1,0 +1,16 @@
+{
+  "name": "bluetooth_manager",
+  "tags": {
+    "dictionaries": ["jsdoc"]
+  },
+  "source": {
+    "include": ["README.md", "./src/"]
+  },
+  "plugins": [
+    "plugins/markdown",
+    "plugins/summarize"
+  ],
+  "opts": {
+    "private": true
+  }
+}
