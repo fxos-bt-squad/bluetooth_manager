@@ -2,6 +2,23 @@
 (function(exports) {
   'use strict';
 
+  /**
+   * @class BluetoothManager
+   * @requires  {@link GattServerManager}
+   * @requires  BluetoothLoader
+   * @requires  evt
+   * @fires BluetoothManager#discovering-state-changed
+   * @fires BluetoothManager#start-discovering
+   * @fires BluetoothManager#stop-discovering
+   * @fires BluetoothManager#state-changed
+   * @fires BluetoothManager#enabled
+   * @fires BluetoothManager#disabled
+   * @fires BluetoothManager#default-adapter-ready
+   * @fires BluetoothManager#device-found
+   * @fires BluetoothManager#device-paired
+   * @fires BluetoothManager#device-unpaired
+   * @fires BluetoothManager#display-passkey-req
+   */
   var BluetoothManager = function() {};
 
   BluetoothManager.prototype = evt({
@@ -13,10 +30,14 @@
 
     _gattServerManager: undefined,
 
-    _discovering: false,
-
     _pairPermission: false,
 
+    _discovering: false,
+    /**
+     * Indicate whether the default adapter of BluetoothManager is in
+     * discoverying state
+     * @member {Boolean} BluetoothManager#discoverying
+     */
     get discovering () {
       return this._discovering;
     },
@@ -25,16 +46,37 @@
       if (value !== this._discovering) {
         console.log(this._discovering + ' -> ' + value);
         this._discovering = value;
+        /**
+         * @event BluetoothManager#discovering-state-changed
+         * @type {Boolean}
+         */
         this.fire('discovering-state-changed', value);
         if (value) {
+          /**
+           * @event BluetoothManager#start-discovering
+           */
           this.fire('start-discovering');
         } else {
+          /**
+           * @event BluetoothManager#stop-discovering
+           */
           this.fire('stop-discovering');
         }
       }
     },
 
     _state: 'disabled',
+    /**
+     * Indicate the stae of default adapter of BluetoothManager.
+     * It could be in one of the four states:
+     * 1. enabling
+     * 2. enabled
+     * 3. disabling
+     * 4. disabled
+     *
+     * see [http://mzl.la/1PoCOnu](http://mzl.la/1PoCOnu) for more information
+     * @member {String} BluetoothManager#state
+     */
     get state () {
       return this._state;
     },
@@ -44,15 +86,34 @@
         console.log(this._state + ' -> ' + value);
         this._state = value;
 
+        /**
+         * @event BluetoothManager#state-changed
+         * @type {String}
+         */
         this.fire('state-changed', value);
         if (value === 'enabled') {
+          /**
+           * @event BluetoothManager#enabled
+           */
           this.fire('enabled');
         } else if (value === 'disabled') {
+          /**
+           * @event BluetoothManager#disabled
+           */
           this.fire('disabled');
         }
       }
     },
 
+    /**
+     * Initialize BluetoothManager
+     * @public
+     * @method BluetoothManager#init
+     * @param  {Boolean} pairPermission - does the app which uses
+     *                                  BluetoohtManager has pair permission?
+     *                                  See also
+     *                                  [bug 1192695](http://bugzil.la/1192695)
+     */
     init: function bm_init(pairPermission) {
       this._mozBluetooth = BluetoothLoader.getMozBluetooth();
       this._pairPermission = pairPermission;
@@ -101,6 +162,12 @@
         this._defaultAdapter.pairingReqs.addEventListener(
           'pairingconsentreq', this);
       }
+      /**
+       * @event BluetoothManager#default-adapter-ready
+       * @type {Object}
+       * @property {BluetoothAdapter} adapter - see
+       *                      [http://mzl.la/1gFH1qV](http://mzl.la/1gFH1qV)
+       */
       this.fire('default-adapter-ready', {adapter: this._defaultAdapter});
     },
 
@@ -136,15 +203,35 @@
           this.onAttributeChanged(evt);
           break;
         case 'devicefound':
+          /**
+           * @event BluetoothManager#device-found
+           * @type {Object}
+           * @property {BluetoothDevice} device - see
+           *                      [http://mzl.la/1IMjCh0](http://mzl.la/1IMjCh0)
+           */
           this.fire('device-found', evt.device);
           break;
         case 'devicepaired':
+          /**
+           * @event BluetoothManager#device-paired
+           * @type {Object}
+           * @property {BluetoothDevice} device - see
+           *                      [http://mzl.la/1IMjCh0](http://mzl.la/1IMjCh0)
+           * @property {String} address - address of the paired device
+           */
           this.fire('device-paired', {
             device: evt.device,
             address: evt.address
           });
           break;
         case 'deviceunpaired':
+          /**
+           * @event BluetoothManager#device-unpaired
+           * @type {Object}
+           * @property {BluetoothDevice} device - see
+           *                      [http://mzl.la/1IMjCh0](http://mzl.la/1IMjCh0)
+           * @property {String} address - address of the unpaired device
+           */
           this.fire('device-unpaired', {
             device: evt.device,
             address: evt.address
@@ -154,6 +241,13 @@
           // TODO
           break;
         case 'displaypasskeyreq':
+          /**
+           * @event BluetoothManager#display-passkey-req
+           * @type {Object}
+           * @property {BluetoothDevice} device - see
+           *                      [http://mzl.la/1IMjCh0](http://mzl.la/1IMjCh0)
+           * @property {String} passkey - passkey
+           */
           this.fire('display-passkey-req', {
             device: evt.device,
             passkey: evt.handle.passkey
@@ -220,6 +314,13 @@
       });
     },
 
+    /**
+     * Start discovery safely and do not worry about to enable default adapter
+     * first.
+     * @public
+     * @method  BluetoothManager#safelyStartDiscovery
+     * @return {Promise}
+     */
     safelyStartDiscovery: function bm_safelyStartDiscovery() {
       if (!this._defaultAdapter) {
         return this._waitForAdapterReadyThen(this._startDiscovery, this);
@@ -227,12 +328,25 @@
       return this.safelyStopDiscovery().then(this._startDiscovery.bind(this));
     },
 
+    /**
+     * Stop discovery safely.
+     * @public
+     * @method  BluetoothManager#safelyStopDiscovery
+     * @return {Promise}
+     */
     safelyStopDiscovery: function bn_safelyStopDiscovery() {
       return this._stopDiscovery().catch(function(reason) {
         console.warn('failed to stop discovery: ' + reason);
       });
     },
 
+    /**
+     * Disable default adapter safely. No need to worry about whether default
+     * adpater is ready or not.
+     * @public
+     * @method  BluetoothManager#safelyDisable
+     * @return {Promise}
+     */
     safelyDisable: function bm_safelyDisable() {
       if (!this._defaultAdapter) {
         return this._waitForAdapterReadyThen(
@@ -289,6 +403,15 @@
       return this._defaultAdapter.setDiscoverable(value);
     },
 
+    /**
+     * Start LE scan safely and do not worry about to enable default adapter
+     * first.
+     * @public
+     * @method  BluetoothManager#safelyStartLeScan
+     * @param {Array} uuids - scan LE devices which is in uuids. Or give `[]` to
+     *                      scan all LE devices.
+     * @return {Promise}
+     */
     safelyStartLeScan: function bm_safelyStartLeScan(uuids) {
       uuids = uuids || [];
       if (!this._defaultAdapter) {
@@ -299,6 +422,12 @@
       return this._startLeScan(uuids);
     },
 
+    /**
+     * Stop LE scan safely.
+     * @public
+     * @method  BluetoothManager#safelyStopLeScan
+     * @return {Promise}
+     */
     safelyStopLeScan: function bm_safelyStopLeScan() {
       if (!this._defaultAdapter) {
         return this._waitForAdapterReadyThen(this._stopLeScan, this);
@@ -308,6 +437,14 @@
       });
     },
 
+    /**
+     * Pair device with specific address. No need to worry about whether default
+     * adpater is ready or not.
+     * @public
+     * @method  BluetoothManager#safelyPair
+     * @param  {String} address - the address of the device we are going to pair
+     * @return {Promise}
+     */
     safelyPair: function bm_safelyPair(address) {
       if (!this._defaultAdapter) {
         return this._waitForAdapterReadyThen(this._pair, this, [address]);
@@ -315,6 +452,14 @@
       return this._pair(address);
     },
 
+    /**
+     * Unpair device with specific address. No need to worry about whether
+     * default adpater is ready or not.
+     * @public
+     * @method  BluetoothManager#safelyUnpair
+     * @param  {String} address - the address of the device we are going to pair
+     * @return {Promise}
+     */
     safelyUnpair: function bm_safelyUnpair(address) {
       if (!this._defaultAdapter) {
         return this._waitForAdapterReadyThen(this._unpair, this, [address]);
@@ -324,6 +469,14 @@
       });
     },
 
+    /**
+     * Set discoverable. No need to worry about whether default adpater is
+     * ready or not.
+     * @public
+     * @method  BluetoothManager#safelySetDiscoverable
+     * @param  {Boolean} value - discoverable or not
+     * @return {Promise}
+     */
     safelySetDiscoverable: function bm_safelySetDiscoverable(value) {
       if (!this._defaultAdapter) {
         return this._waitForAdapterReadyThen(
@@ -332,11 +485,26 @@
       return this._setDiscoverable(value);
     },
 
-    // TODO: should have a better name
+    /**
+     * Connect BLE device with specific address using BLE Server API.
+     * @public
+     * @method  BluetoothManager#gattServerConnect
+     * @param  {String} address - the address of the device we are going to
+     *                          connect
+     * @return {Promise}
+     */
     gattServerConnect: function bm_gattServerConnect(address) {
       return this._gattServerManager.connect(address);
     },
 
+    /**
+     * Disconnect BLE device with specific address using BLE Server API.
+     * @public
+     * @method  BluetoothManager#gattServerDisconnect
+     * @param  {String} address - the address of the device we are going to
+     *                          disconnect
+     * @return {Promise}
+     */
     gattServerDisconnect: function bm_gattServerDisconnect(address) {
       return this._gattServerManager.disconnect(address);
     }

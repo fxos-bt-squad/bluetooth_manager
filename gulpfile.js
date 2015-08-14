@@ -5,6 +5,9 @@ var notify = require('gulp-notify');
 var bower = require('gulp-bower');
 var concat = require('gulp-concat');
 var browserSync = require('browser-sync');
+var del = require('del');
+var shell = require('gulp-shell');
+var runSequence = require('run-sequence');
 
 var JS_FILE_PATH = ['src/**/*.js', 'test/**/*.js'];
 // list js files in order because they need to be loaded in this order
@@ -37,6 +40,13 @@ gulp.task('jshint', function() {
       return error.message;
     }));
 });
+
+gulp.task('docs', ['clean-docs'], function() {
+  gulp.src(['README.md', 'src/**/*.js'], {read: false}).pipe(
+    shell(['./node_modules/.bin/jsdoc -c ./jsdoc.json -d ./docs -r']));
+});
+
+gulp.task('clean-docs', del.bind(null, ['docs']));
 
 gulp.task('build', ['bower', 'jshint'], function() {
   return gulp.src(JS_FILES_IN_ORDER)

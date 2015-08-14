@@ -13,3 +13,9 @@
 $> npm install
 $> gulp
 ```
+
+### Generate Document
+```sh
+$> gulp docs
+```
+
